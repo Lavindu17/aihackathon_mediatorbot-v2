@@ -27,33 +27,36 @@ export default function JoinScreen() {
       Alert.alert("Required", "Please enter Session Code and PIN.");
       return;
     }
-
     setLoading(true);
 
     try {
-      // 1. Find Session
-      const { data: session, error: findError } = await supabase
+      const { data: session, error } = await supabase
         .from("sessions")
         .select("*")
         .eq("session_code", code.toUpperCase().trim())
         .single();
-
-      if (findError || !session) {
+      if (error || !session) {
         Alert.alert("Error", "Invalid Session Code");
         setLoading(false);
         return;
       }
 
-      // 2. CHECK: Is this a NEW Partner B or Existing Partner B logging back in?
-      if (session.partner_b_ready) {
-        // --- LOGIN MODE ---
-        // If B is already registered, check the PIN
-        if (session.partner_b_pin !== pin) {
-          Alert.alert("Access Denied", "Incorrect PIN for this session.");
-          setLoading(false);
-          return;
-        }
-        // PIN matches? Let them in.
+      // LOGIN CHECK
+      if (session.partner_a_pin === pin) {
+        // Logging in as Partner A
+        router.replace({
+          pathname: "/chat",
+          params: {
+            sessionId: session.id,
+            role: "partner_a",
+            name: session.partner_a_name,
+          },
+        });
+        return;
+      }
+
+      if (session.partner_b_ready && session.partner_b_pin === pin) {
+        // Logging in as Partner B
         router.replace({
           pathname: "/chat",
           params: {
@@ -62,18 +65,19 @@ export default function JoinScreen() {
             name: session.partner_b_name,
           },
         });
-      } else {
-        // --- REGISTER MODE ---
+        return;
+      }
+
+      // NEW PARTNER B REGISTRATION
+      if (!session.partner_b_ready) {
         if (!name.trim() || !email.trim()) {
           Alert.alert(
             "Missing Info",
-            "Since this is your first time joining, please enter Name and Email."
+            "New to this session? Please enter Name and Email."
           );
           setLoading(false);
           return;
         }
-
-        // Register B
         const { error: updateError } = await supabase
           .from("sessions")
           .update({
@@ -83,14 +87,16 @@ export default function JoinScreen() {
             partner_b_ready: true,
           })
           .eq("id", session.id);
-
         if (updateError) throw updateError;
 
         router.replace({
           pathname: "/chat",
           params: { sessionId: session.id, role: "partner_b", name: name },
         });
+        return;
       }
+
+      Alert.alert("Access Denied", "Incorrect PIN.");
     } catch (error: any) {
       Alert.alert("Error", error.message);
     } finally {
@@ -107,8 +113,7 @@ export default function JoinScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <ArrowLeft size={24} color="#0F172A" />
         </TouchableOpacity>
-
-        <Text style={styles.title}>Join Session</Text>
+        <Text style={styles.title}>Join / Login</Text>
 
         <View style={styles.form}>
           <Text style={styles.label}>Session Code</Text>
@@ -120,25 +125,7 @@ export default function JoinScreen() {
             autoCapitalize="characters"
           />
 
-          <Text style={styles.label}>Your Name</Text>
-          <TextInput
-            style={styles.input}
-            value={name}
-            onChangeText={setName}
-            placeholder="e.g. Sam"
-          />
-
-          <Text style={styles.label}>Email</Text>
-          <TextInput
-            style={styles.input}
-            value={email}
-            onChangeText={setEmail}
-            placeholder="sam@example.com"
-            keyboardType="email-address"
-            autoCapitalize="none"
-          />
-
-          <Text style={styles.label}>Set/Enter 4-Digit PIN</Text>
+          <Text style={styles.label}>PIN (4 Digits)</Text>
           <TextInput
             style={styles.input}
             value={pin}
@@ -148,9 +135,22 @@ export default function JoinScreen() {
             maxLength={4}
             secureTextEntry
           />
-          <Text style={styles.hint}>
-            This secures your chat from your partner.
-          </Text>
+
+          <Text style={styles.divider}>New here? Fill these too:</Text>
+          <TextInput
+            style={styles.input}
+            value={name}
+            onChangeText={setName}
+            placeholder="Your Name"
+          />
+          <TextInput
+            style={styles.input}
+            value={email}
+            onChangeText={setEmail}
+            placeholder="Email"
+            autoCapitalize="none"
+            keyboardType="email-address"
+          />
 
           <TouchableOpacity
             style={styles.btn}
@@ -160,7 +160,7 @@ export default function JoinScreen() {
             {loading ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={styles.btnText}>Join Session</Text>
+              <Text style={styles.btnText}>Enter Session</Text>
             )}
           </TouchableOpacity>
         </View>
@@ -180,6 +180,13 @@ const styles = StyleSheet.create({
   title: { fontSize: 32, fontWeight: "800", color: "#0F172A" },
   form: { marginTop: 32, gap: 16 },
   label: { fontSize: 14, fontWeight: "600", color: "#64748B" },
+  divider: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#0F172A",
+    marginTop: 10,
+    marginBottom: 5,
+  },
   input: {
     backgroundColor: "#F1F5F9",
     padding: 16,
@@ -195,5 +202,4 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   btnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
-  hint: { fontSize: 12, color: "#94A3B8" },
 });
